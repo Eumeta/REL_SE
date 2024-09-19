@@ -81,7 +81,8 @@ Ok = {"h0cbd6714g0052g438agb735g3983f72be4fe","h147514e7g7cb1g4f3dg9971g33e18dd9
 "h7edb1dacg92fdg462bgafe7g5f9b53675940","ha04406bdg3ec3g47adgad0fg5c35deebfa05","he60628dag7e16g4c5dgb8cage8a6a3dabe61",
 "h41c7f559gf54dg44eegbf7bga120b0564af2","h7ae27f0fg42c0g4f04gae76gb4e81fe47baa","hcdee071agfc9bg4caagb661g368bb54749fa",
 "h7fb8cf17g605bg4a21gbc42g1329c379ccc6","he9b3208cg8347g40a2ga994gf287368adb89","h15cc1f5ag1841g4fb8ga914gf4c050ab900d",
-"hd4f1ce4dg1945g4849gb848g838b76873ae3",}
+"hd4f1ce4dg1945g4849gb848g838b76873ae3","h1ba886b4gb7aeg405eg9ee0g3cc72da21118","hb5dab081gcd9eg448fg911bg8e18022a6bbf",
+"hcc5bad77gf86dg4ef3g93c3g33d88832fd80","hdda6ce3fg83b8g4f1cga762g2c65fcd079ac"}
 
 Good = {"h09d80ebcg9d1fg4d43g85b0gdb0bd62ab079","h1e364f5eg4284g46c4g9337g640488392f7e","h201dadb4g9689g45baga115g0be24ab06ac0",
 "h68d138f3gf5e7g44e7ga765g11d38b6886a0","h6d0c86e9g1334g462ag9135gdf65b0f746a0","h8b84795bg6560g4ab6gbca4g8e49bd3dcb27",
@@ -625,7 +626,7 @@ function Generate_cosmetic(ID2, Cosmetic_rate)
 end
 
 function Generate_stuff(ID2, stuff_name, typ)
-	if not Get("ConsumbleVisible") then
+	if not Get("ConsumableVisible") then
 		return
 	end
 	Check_and_fix()
@@ -896,7 +897,7 @@ function Generate_loot(ID2, u, r, v, l, bypassed,differentType)
 		end
 		local treasure = BigList[ticket].item_uuid
 		TemplateAddTo(treasure,ID2,1,0)
-		if BigList[ticket].item_rarity ~= "legendary" and Get("Pity") and not bypassed and l > 0 then
+		if BigList[ticket].item_rarity ~= "legendary" and Get("Pity") and not bypassed then
 			Mods.REL_SE.PersistentVars.Misc.PityCount = Mods.REL_SE.PersistentVars.Misc.PityCount + 1
 			print("[REL_SE] Pity Count: "..Mods.REL_SE.PersistentVars.Misc.PityCount)
 		elseif Get("Pity") and not bypassed then
@@ -956,9 +957,6 @@ function Generate_loot(ID2, u, r, v, l, bypassed,differentType)
 end
 
 function Generate_multiple_loot(ID2, typ, container_quality)
-	if not Get("CosmeticVisible") then
-		return
-	end
 	local time = 0
 	print("Generate_multiple_loot using: typ:"..typ.."    container_quality: "..(container_quality or ""))
 	local total_count = Get(typ .. "_MultiLootUnique")
@@ -971,7 +969,8 @@ function Generate_multiple_loot(ID2, typ, container_quality)
 	local rate_mult = Get(typ .. "_UniquePenalty")
 	local different_type = Get(typ .. "_DifferentType")
 	local quality = (container_quality and container_quality > 0 and container_quality) or ""
-	local multiplier = (container_quality == "B" and Get("B_UniqueRate")) or 1
+	local multiplier = (typ == "B" and Get("B_UniqueRate")) or 
+					(typ == "M" and Get("M_UniqueRate")) or 1
 	local u = Get(quality.."uncommon") * multiplier
 	local r = Get(quality.."rare") * multiplier
 	local v = Get(quality.."veryrare") * multiplier
@@ -1697,76 +1696,77 @@ Ext.Osiris.RegisterListener("RequestTrade", 4, "before", function(_, ID2, _, _)
 	end
 end)
 
-Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_, ID2)
-	local name = ResolveTranslatedString(Ext.Entity.Get(ID2).DisplayName.NameKey.Handle.Handle)
-	local BlackList = Get("BlackList")
-	if type(BlackList) == "string" then
-		Mods.BG3MCM.MCMAPI:ResetSettingValue("BlackList", ModuleUUID)
-		BlackList = Get("BlackList")
-	end
-	local item_list, chest_list = GetUniqueGears(ID2,"Camp")
-	local exist = {}
-	for _, v in pairs(chest_list) do
-		for _, k in pairs(item_list) do
-			local object = k.GameObjectVisual.RootTemplateId
-			if (not TemplateIsInInventory(object,v)) or 
-			(TemplateIsInPartyInventory(object,v,0) and TemplateIsInPartyInventory(object,v,0) == 0 and CountInstances(exist,object) == 0) then
-				table.insert(exist,object)
+Ext.Osiris.RegisterListener("RequestCanLoot",2,"before", function(looter,ID2)
+	if IsDead(ID2) == 1 then
+		local name = ResolveTranslatedString(Ext.Entity.Get(ID2).DisplayName.NameKey.Handle.Handle)
+		local BlackList = Get("BlackList")
+		if type(BlackList) == "string" then
+			Mods.BG3MCM.MCMAPI:ResetSettingValue("BlackList", ModuleUUID)
+			BlackList = Get("BlackList")
+		end
+		local item_list, chest_list = GetUniqueGears(ID2,"Camp")
+		local exist = {}
+		for _, v in pairs(chest_list) do
+			for _, k in pairs(item_list) do
+				local object = k.GameObjectVisual.RootTemplateId
+				if (not TemplateIsInInventory(object,v)) or 
+				(TemplateIsInPartyInventory(object,v,0) and TemplateIsInPartyInventory(object,v,0) == 0 and CountInstances(exist,object) == 0) then
+					table.insert(exist,object)
+				end
 			end
 		end
-	end
-	if Get("ClearLooted") and not Get("Duplicate") then
-		local count = 0
-		local curr_obj = nil
-		table.sort(item_list, Alphabetical_Visual)
-		for _, v in pairs(item_list) do
-			local object = v.GameObjectVisual.RootTemplateId
-			local entity = v.Uuid.EntityUuid
-			local item_name = ResolveTranslatedString(GetDisplayName(entity))
-			if not curr_obj or curr_obj ~= object then
-				curr_obj = object
-				count = 0
-			end
-			if (CountInstances(Mods.REL_SE.PersistentVars.Dropped,object) > 0 or
-			(TemplateIsInPartyInventory(object,GetHostCharacter(),0) and TemplateIsInPartyInventory(object,GetHostCharacter(),0) > 1) or 
-			CountInstances(exist,object) > 0) and count >= 0 then
-				if (TemplateIsInPartyInventory(object,GetHostCharacter(),0) and TemplateIsInPartyInventory(object,GetHostCharacter(),0) > 0) or
-					 CountInstances(exist,object) > 0 then
-					if TemplateIsInPartyInventory(object,GetHostCharacter(),0) and CountInstances(exist,object) and
-					(TemplateIsInPartyInventory(object,GetHostCharacter(),0) + CountInstances(exist,object) == 0) then
-						count = -2
-					end
-					if  TemplateIsInPartyInventory(object,GetHostCharacter(),0) and CountInstances(exist,object) and 
-					TemplateIsInPartyInventory(object,GetHostCharacter(),0) + CountInstances(exist,object) > count + 1 then
-						if GetStackAmount(entity) > 1 then
-							SetStackAmount(entity,1)
-							print("[REL_SE] Reduced stack of "..item_name.." to 1")
-						else
-							count = count + 1
-							RequestDelete(entity)
-							print("[REL_SE] Deleted 1 duplicate of "..item_name)
+		if Get("ClearLooted") and not Get("Duplicate") then
+			local count = 0
+			local curr_obj = nil
+			table.sort(item_list, Alphabetical_Visual)
+			for _, v in pairs(item_list) do
+				local object = v.GameObjectVisual.RootTemplateId
+				local entity = v.Uuid.EntityUuid
+				local item_name = ResolveTranslatedString(GetDisplayName(entity))
+				if not curr_obj or curr_obj ~= object then
+					curr_obj = object
+					count = 0
+				end
+				if (CountInstances(Mods.REL_SE.PersistentVars.Dropped,object) > 0 or
+				(TemplateIsInPartyInventory(object,looter,0) and TemplateIsInPartyInventory(object,looter,0) > 1) or 
+				CountInstances(exist,object) > 0) and count >= 0 then
+					if (TemplateIsInPartyInventory(object,looter,0) and TemplateIsInPartyInventory(object,looter,0) > 0) or
+						CountInstances(exist,object) > 0 then
+						if TemplateIsInPartyInventory(object,looter,0) and CountInstances(exist,object) and
+						(TemplateIsInPartyInventory(object,looter,0) + CountInstances(exist,object) == 0) then
+							count = -2
 						end
-						if Get("Compensate") then
-							local rarity = v.Value.Rarity
-							if rarity == 4 then
-								Generate_loot(ID2,0,0,0,10,true)
-							elseif rarity == 3 then
-								Generate_loot(ID2,0,0,10,0,true)
-							elseif rarity == 2 then
-								Generate_loot(ID2,0,10,0,0,true)
+						if  TemplateIsInPartyInventory(object,looter,0) and CountInstances(exist,object) and 
+						TemplateIsInPartyInventory(object,looter,0) + CountInstances(exist,object) > count + 1 then
+							if GetStackAmount(entity) > 1 then
+								SetStackAmount(entity,1)
+								print("[REL_SE] Reduced stack of "..item_name.." to 1")
 							else
-								Generate_loot(ID2,10,0,0,0,true)
+								count = count + 1
+								RequestDelete(entity)
+								print("[REL_SE] Deleted 1 duplicate of "..item_name)
+							end
+							if Get("Compensate") then
+								local rarity = v.Value.Rarity
+								if rarity == 4 then
+									Generate_loot(ID2,0,0,0,10,true)
+								elseif rarity == 3 then
+									Generate_loot(ID2,0,0,10,0,true)
+								elseif rarity == 2 then
+									Generate_loot(ID2,0,10,0,0,true)
+								else
+									Generate_loot(ID2,10,0,0,0,true)
+								end
 							end
 						end
 					end
 				end
 			end
 		end
-	end
-	if not Get("BossVisible") and ((IsBoss(ID2) == 1 or string.find(ResolveTranslatedString(GetDisplayName(ID2)),"Gortash") ) and 
-		(IsAlly(GetHostCharacter(),ID2) == 0 or IsEnemy(GetHostCharacter(),ID2) == 1) and
-		IsPartyMember(ID2,1) == 0 and CountInstances(BlackList,name) == 0) then
-		if HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 0 then
+		if Get("BossVisible") and ((IsBoss(ID2) == 1 or string.find(ResolveTranslatedString(GetDisplayName(ID2)),"Gortash") ) and 
+		(IsAlly(looter,ID2) == 0 or IsEnemy(looter,ID2) == 1) and
+		IsPartyMember(ID2,1) == 0 and CountInstances(BlackList,name) == 0) and
+		HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 0 then
 			for _, v in pairs(chest_list) do
 				for _, k in pairs(item_list) do
 					local object = k.GameObjectVisual.RootTemplateId
@@ -1777,7 +1777,7 @@ Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_,
 			end
 			for _, k in pairs(item_list) do
 				local object = k.GameObjectVisual.RootTemplateId
-				if (CountInstances(exist,object) > 0 or TemplateIsInPartyInventory(object,GetHostCharacter(),0) > 0 )and
+				if (CountInstances(exist,object) > 0 or TemplateIsInPartyInventory(object,looter,0) > 0 )and
 				CountInstances(UUIDS,object) > 0 then
 					local index = FindIndices(UUIDS,object)[1]
 					if Rarities[index] ~= "cosmetic" then
@@ -1787,7 +1787,7 @@ Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_,
 						table.insert(Looted_types, Types[index])
 						if not Act[index] then
 							for i = 1,index do
-								Act[i] = " "
+								Act[i] = " "								
 							end
 						end
 						table.insert(Looted_acts,Act[index])
@@ -1806,18 +1806,17 @@ Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_,
 			Generate_stuff(ID2, "scroll", "B")
 			Generate_stuff(ID2, "potion", "B")
 			Generate_stuff(ID2, "arrow", "B")
-		end
 		if Get("EnableContinuum") and Return_to_sender > 0 then
 			if Osi.TimerExists("Anomaly") == 1 then
 				RandomEffect()
 				Osi.TimerCancel("Anomaly")
 			end
 		end
-	elseif not Get("MobVisible") and ((IsBoss(ID2) == 0 and not string.find(ResolveTranslatedString(GetDisplayName(ID2)),"Gortash")) 
-	and ((IsAlly(GetHostCharacter(),ID2) == 0 and IsPartyMember(ID2,1) == 0 and IsEnemy(GetHostCharacter(),ID2) == 1) or 
-	(Get("IncludeNeutral") and IsPartyMember(ID2,1) == 0 and IsAlly(GetHostCharacter(),ID2) == 0 and IsEnemy(GetHostCharacter(),ID2) == 0) or
-	(Get("IncludeAlly") and IsPartyMember(ID2,1) == 0 and IsAlly(GetHostCharacter(),ID2) == 1 and IsEnemy(GetHostCharacter(),ID2) == 0)) and IsDead(ID2) == 1) then
-		if HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 0 then
+		elseif Get("MobVisible") and ((IsBoss(ID2) == 0 and not string.find(ResolveTranslatedString(GetDisplayName(ID2)),"Gortash")) 
+		and ((IsAlly(looter,ID2) == 0 and IsPartyMember(ID2,1) == 0 and IsEnemy(looter,ID2) == 1) or 
+		(Get("IncludeNeutral") and IsPartyMember(ID2,1) == 0 and IsAlly(looter,ID2) == 0 and IsEnemy(looter,ID2) == 0) or
+		(Get("IncludeAlly") and IsPartyMember(ID2,1) == 0 and IsAlly(looter,ID2) == 1 and IsEnemy(looter,ID2) == 0))) and
+		HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 0 then
 			for _, v in pairs(chest_list) do
 				for _, k in pairs(item_list) do
 					local object = k.GameObjectVisual.RootTemplateId
@@ -1828,7 +1827,7 @@ Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_,
 			end
 			for _, k in pairs(item_list) do
 				local object = k.GameObjectVisual.RootTemplateId
-				if (CountInstances(exist,object) > 0 or TemplateIsInPartyInventory(object,GetHostCharacter(),0) > 0 )and
+				if (CountInstances(exist,object) > 0 or TemplateIsInPartyInventory(object,looter,0) > 0 )and
 				CountInstances(UUIDS,object) > 0 then
 					local index = FindIndices(UUIDS,object)[1]
 					if Rarities[index] ~= "cosmetic" then
@@ -1847,23 +1846,33 @@ Ext.Osiris.RegisterListener("CharacterLootedCharacter", 2, "before", function(_,
 						table.remove(Rarities, index)
 						table.remove(UUIDS, index)
 						table.remove(Types,index)
+						end
 					end
+				Write_and_save(REL_Lootlist, Names, UUIDS, Rarities, Types, Act)
+				Write_and_save(REL_ShadowRealm, Looted_names, Looted_UUIDS, Looted_rarities, Looted_types, Looted_acts)
+				Generate_multiple_cosmetic(ID2, "M")
+				Generate_multiple_loot(ID2, "M")
+				Generate_stuff(ID2, "scroll", "M")
+				Generate_stuff(ID2, "potion", "M")
+				Generate_stuff(ID2, "arrow", "M")
+			end
+			if Get("EnableContinuum") and Return_to_sender > 0 then
+				if Osi.TimerExists("Anomaly") == 1 then
+					RandomEffect()
+					Osi.TimerCancel("Anomaly")
 				end
 			end
-			Write_and_save(REL_Lootlist, Names, UUIDS, Rarities, Types, Act)
-			Write_and_save(REL_ShadowRealm, Looted_names, Looted_UUIDS, Looted_rarities, Looted_types, Looted_acts)
-			Generate_multiple_cosmetic(ID2, "M")
-			Generate_multiple_loot(ID2, "M")
-			Generate_stuff(ID2, "scroll", "M")
-			Generate_stuff(ID2, "potion", "M")
-			Generate_stuff(ID2, "arrow", "M")
 		end
-		if Get("EnableContinuum") and Return_to_sender > 0 then
-			if Osi.TimerExists("Anomaly") == 1 then
-				RandomEffect()
-				Osi.TimerCancel("Anomaly")
-			end
-		end
+	end
+end)
+
+Ext.Osiris.RegisterListener("CharacterLootedCharacter",2,"before", function(looter,lootedcharacter)
+	if IsDead(lootedcharacter) == 1 and HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 1 and GetDisplayName(ID2) ~= "h42cf1b05g5c7cg45c4g86aeg77f3d26d069c"
+	and GetDisplayName(ID2) ~= "h6c9d8242g3ec9g4f49ga9c6gae77e563b90b" and GetDisplayName(ID2) ~= "hebaec8d0ge9e4g4af8g9db9g5f4766c93433" 
+	and GetGold(ID2) == Get("Gacha_Price") then
+		RemoveStatus(ID2,"LOOT_DISTRIBUTED_OBJECT")
+		AddGold(ID2, -Get("Gacha_Price"))
+		AddGold("0133f2ad-e121-4590-b5f0-a79413919805", Get("Gacha_Price"))
 	end
 end)
 
@@ -2092,7 +2101,7 @@ Ext.Osiris.RegisterListener("StatusApplied",4,"after",function(guid, status_name
 					Osi.TimerCancel("Anomaly")
 				end
 			end
-		elseif GetCategory(Container, GetDisplayName(guid), true) == "Wardrobe" and
+		elseif Get("CosmeticVisible") and GetCategory(Container, GetDisplayName(guid), true) == "Wardrobe" and
 		#FindIndices(Rarities, "cosmetic") > 0 then
 			local container_quality = GetCategory(Container, GetDisplayName(guid), false)
 			Generate_multiple_cosmetic(guid, "W", container_quality)
@@ -2102,7 +2111,7 @@ Ext.Osiris.RegisterListener("StatusApplied",4,"after",function(guid, status_name
 			Generate_stuff(guid, "scroll", "C")
 		elseif GetCategory(Container,GetDisplayName(guid),true) == "Arrow" then
 			Generate_stuff(guid, "arrow", "C")
-		elseif (IsBoss(guid) == 1 or string.find(ResolveTranslatedString(GetDisplayName(guid)),"Gortash") ) 
+		elseif Get("BossVisible") and (IsBoss(guid) == 1 or string.find(ResolveTranslatedString(GetDisplayName(guid)),"Gortash") ) 
 				and (IsAlly(GetHostCharacter(),guid) == 0 or IsPartyMember(guid,1) == 0) and IsDead(guid) == 1  then
 			Generate_multiple_cosmetic(guid, "B")
 			Generate_multiple_loot(guid,"B")
@@ -2115,7 +2124,7 @@ Ext.Osiris.RegisterListener("StatusApplied",4,"after",function(guid, status_name
 					Osi.TimerCancel("Anomaly")
 				end
 			end
-		elseif (IsBoss(guid) == 0 and not string.find(ResolveTranslatedString(GetDisplayName(guid)),"Gortash")) 
+		elseif Get("MobVisible") and (IsBoss(guid) == 0 and not string.find(ResolveTranslatedString(GetDisplayName(guid)),"Gortash")) 
 		and ((IsAlly(GetHostCharacter(),guid) == 0 and IsPartyMember(guid,1) == 0 and IsEnemy(GetHostCharacter(),guid) == 1) or 
 		(Get("IncludeNeutral") and IsPartyMember(guid,1) == 0 and IsAlly(GetHostCharacter(),guid) == 0 and IsEnemy(GetHostCharacter(),guid) == 0) or
 		(Get("IncludeAlly") and IsPartyMember(guid,1) == 0 and IsAlly(GetHostCharacter(),guid) == 1 and IsEnemy(GetHostCharacter(),guid) == 0)) and IsDead(guid) == 1 then
@@ -2331,12 +2340,6 @@ Ext.Osiris.RegisterListener("UseStarted", 2, "before", function(_, ID2)
 			end
 			Free_roll = Free_roll - 1
 			REL_ResetStatuses()
-		elseif HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 1 and GetDisplayName(ID2) ~= "h42cf1b05g5c7cg45c4g86aeg77f3d26d069c"
-				and GetDisplayName(ID2) ~= "h6c9d8242g3ec9g4f49ga9c6gae77e563b90b" and GetDisplayName(ID2) ~= "hebaec8d0ge9e4g4af8g9db9g5f4766c93433" 
-				and GetGold(ID2) == Get("Gacha_Price") then
-			RemoveStatus(ID2,"LOOT_DISTRIBUTED_OBJECT")
-			AddGold(ID2, -Get("Gacha_Price"))
-			AddGold("0133f2ad-e121-4590-b5f0-a79413919805", Get("Gacha_Price"))
 		elseif HasActiveStatus(ID2, "LOOT_DISTRIBUTED_OBJECT") == 1 and Get("Sacrifice") and Get("SacrificeCount") >= 2 then
 			if #Ext.Entity.Get(ID2).InventoryOwner.Inventories[1].InventoryContainer.Items == Get("SacrificeCount") then 
 				local count = 0
@@ -2404,6 +2407,16 @@ Ext.Osiris.RegisterListener("UseStarted", 2, "before", function(_, ID2)
 			end
 		end
 		::fail::
+	end
+end)
+
+Ext.Osiris.RegisterListener("UseFinished",3,"after",function(looter,item,success)
+	if IsContainer(item) == 1 and HasActiveStatus(item, "LOOT_DISTRIBUTED_OBJECT") == 1 and GetDisplayName(item) ~= "h42cf1b05g5c7cg45c4g86aeg77f3d26d069c"
+	and GetDisplayName(item) ~= "h6c9d8242g3ec9g4f49ga9c6gae77e563b90b" and GetDisplayName(item) ~= "hebaec8d0ge9e4g4af8g9db9g5f4766c93433" 
+	and GetGold(item) == Get("Gacha_Price") then
+		RemoveStatus(item,"LOOT_DISTRIBUTED_OBJECT")
+		AddGold(item, -Get("Gacha_Price"))
+		AddGold("0133f2ad-e121-4590-b5f0-a79413919805", Get("Gacha_Price"))
 	end
 end)
 
